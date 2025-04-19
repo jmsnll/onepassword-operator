@@ -55,6 +55,7 @@ func (h *SecretUpdateHandler) restartWorkloadsWithUpdatedSecrets(updatedSecretsB
 
 	workloadTypes := []client.ObjectList{
 		&appsv1.DeploymentList{},
+		&appsv1.DaemonSetList{},
 	}
 
 	setForAutoRestartByNamespaceMap, err := h.getIsSetForAutoRestartByNamespaceMap()
@@ -116,6 +117,8 @@ func (h *SecretUpdateHandler) restartWorkload(workload client.Object) {
 
 	switch obj := workload.(type) {
 	case *appsv1.Deployment:
+		podTemplate = &obj.Spec.Template
+	case *appsv1.DaemonSet:
 		podTemplate = &obj.Spec.Template
 	default:
 		log.Info("Unsupported workload type for restart", "type", fmt.Sprintf("%T", obj))
@@ -295,6 +298,8 @@ func (h *SecretUpdateHandler) isNamespaceSetToAutoRestart(namespace *corev1.Name
 func GetPodTemplate(obj client.Object) (*corev1.PodTemplateSpec, error) {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
+		return &o.Spec.Template, nil
+	case *appsv1.DaemonSet:
 		return &o.Spec.Template, nil
 	default:
 		return nil, fmt.Errorf("unsupported type %T", obj)

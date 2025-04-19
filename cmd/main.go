@@ -178,6 +178,17 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Deployment")
 		os.Exit(1)
 	}
+
+	if err = (&controller.DaemonSetReconciler{
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		OpConnectClient:    opConnectClient,
+		OpAnnotationRegExp: r,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DaemonSet")
+		os.Exit(1)
+	}
+
 	//+kubebuilder:scaffold:builder
 
 	//Setup 1PasswordConnect

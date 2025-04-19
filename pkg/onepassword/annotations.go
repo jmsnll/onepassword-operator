@@ -33,6 +33,23 @@ func GetAnnotationsForDeployment(deployment *appsv1.Deployment, regex *regexp.Re
 	return annotations, annotationsFound
 }
 
+func GetAnnotationsForDaemonSet(daemonSet *appsv1.DaemonSet, regex *regexp.Regexp) (map[string]string, bool) {
+	annotationsFound := false
+	annotations := FilterAnnotations(daemonSet.Annotations, regex)
+	if len(annotations) > 0 {
+		annotationsFound = true
+	} else {
+		annotations = FilterAnnotations(daemonSet.Spec.Template.Annotations, regex)
+		if len(annotations) > 0 {
+			annotationsFound = true
+		} else {
+			annotationsFound = false
+		}
+	}
+
+	return annotations, annotationsFound
+}
+
 func FilterAnnotations(annotations map[string]string, regex *regexp.Regexp) map[string]string {
 	filteredAnnotations := make(map[string]string)
 	for key, value := range annotations {
