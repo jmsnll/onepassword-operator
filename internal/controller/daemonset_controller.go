@@ -49,19 +49,19 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var logDeployment = logf.Log.WithName("controller_deployment")
+var logDaemonSet = logf.Log.WithName("controller_daemonset")
 
-// DeploymentReconciler reconciles a Deployment object
-type DeploymentReconciler struct {
+// DaemonSetReconciler reconciles a DaemonSet object
+type DaemonSetReconciler struct {
 	client.Client
 	Scheme             *runtime.Scheme
 	OpConnectClient    connect.Client
 	OpAnnotationRegExp *regexp.Regexp
 }
 
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=apps,resources=deployments/finalizers,verbs=update
+//+kubebuilder:rbac:groups=apps,resources=daemonSets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,resources=daemonSets/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=apps,resources=daemonSets/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -72,12 +72,12 @@ type DeploymentReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile
-func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	reqLogger := logDeployment.WithValues("Request.Namespace", req.Namespace, "Request.Name", req.Name)
-	reqLogger.V(logs.DebugLevel).Info("Reconciling Deployment")
+func (r *DaemonSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	reqLogger := logDaemonSet.WithValues("Request.Namespace", req.Namespace, "Request.Name", req.Name)
+	reqLogger.V(logs.DebugLevel).Info("Reconciling DaemonSet")
 
-	deployment := &appsv1.Deployment{}
-	err := r.Get(context.Background(), req.NamespacedName, deployment)
+	daemonSet := &appsv1.DaemonSet{}
+	err := r.Get(context.Background(), req.NamespacedName, daemonSet)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return reconcile.Result{}, nil
@@ -85,39 +85,39 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	annotations, annotationsFound := op.GetAnnotationsForDeployment(deployment, r.OpAnnotationRegExp)
+	annotations, annotationsFound := op.GetAnnotationsForDaemonSet(daemonSet, r.OpAnnotationRegExp)
 	if !annotationsFound {
 		reqLogger.V(logs.DebugLevel).Info("No 1Password Annotations found")
 		return ctrl.Result{}, nil
 	}
 
-	//If the deployment is not being deleted
-	if deployment.ObjectMeta.DeletionTimestamp.IsZero() {
-		// Adds a finalizer to the deployment if one does not exist.
+	//If the daemonSet is not being deleted
+	if daemonSet.ObjectMeta.DeletionTimestamp.IsZero() {
+		// Adds a finalizer to the daemonSet if one does not exist.
 		// This is so we can handle cleanup of associated secrets properly
-		if !utils.ContainsString(deployment.ObjectMeta.Finalizers, finalizer) {
-			deployment.ObjectMeta.Finalizers = append(deployment.ObjectMeta.Finalizers, finalizer)
-			if err = r.Update(context.Background(), deployment); err != nil {
+		if !utils.ContainsString(daemonSet.ObjectMeta.Finalizers, finalizer) {
+			daemonSet.ObjectMeta.Finalizers = append(daemonSet.ObjectMeta.Finalizers, finalizer)
+			if err = r.Update(context.Background(), daemonSet); err != nil {
 				return reconcile.Result{}, err
 			}
 		}
-		// Handles creation or updating secrets for deployment if needed
-		if err = r.handleApplyingDeployment(deployment, deployment.Namespace, annotations, req); err != nil {
+		// Handles creation or updating secrets for daemonSet if needed
+		if err = r.handleApplyingDaemonSet(daemonSet, daemonSet.Namespace, annotations, req); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
 	}
-	// The deployment has been marked for deletion. If the one password
+	// The daemonSet has been marked for deletion. If the one password
 	// finalizer is found there are cleanup tasks to perform
-	if utils.ContainsString(deployment.ObjectMeta.Finalizers, finalizer) {
+	if utils.ContainsString(daemonSet.ObjectMeta.Finalizers, finalizer) {
 
 		secretName := annotations[op.NameAnnotation]
-		if err = r.cleanupKubernetesSecretForDeployment(secretName, deployment); err != nil {
+		if err = r.cleanupKubernetesSecretForDaemonSet(secretName, daemonSet); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		// Remove the finalizer from the deployment so deletion of deployment can be completed
-		if err = r.removeOnePasswordFinalizerFromDeployment(deployment); err != nil {
+		// Remove the finalizer from the daemonSet so deletion of daemonSet can be completed
+		if err = r.removeOnePasswordFinalizerFromDaemonSet(daemonSet); err != nil {
 			return reconcile.Result{}, err
 		}
 	}
@@ -125,29 +125,29 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *DeploymentReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *DaemonSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appsv1.Deployment{}).
+		For(&appsv1.DaemonSet{}).
 		Complete(r)
 }
 
-func (r *DeploymentReconciler) cleanupKubernetesSecretForDeployment(secretName string, deletedDeployment *appsv1.Deployment) error {
+func (r *DaemonSetReconciler) cleanupKubernetesSecretForDaemonSet(secretName string, deletedDaemonSet *appsv1.DaemonSet) error {
 	kubernetesSecret := &corev1.Secret{}
 	kubernetesSecret.ObjectMeta.Name = secretName
-	kubernetesSecret.ObjectMeta.Namespace = deletedDeployment.Namespace
+	kubernetesSecret.ObjectMeta.Namespace = deletedDaemonSet.Namespace
 
 	if len(secretName) == 0 {
 		return nil
 	}
 	updatedSecrets := map[string]*corev1.Secret{secretName: kubernetesSecret}
 
-	multipleDeploymentsUsingSecret, err := r.areMultipleDeploymentsUsingSecret(updatedSecrets, *deletedDeployment)
+	multipleDaemonSetsUsingSecret, err := r.areMultipleDaemonSetsUsingSecret(updatedSecrets, *deletedDaemonSet)
 	if err != nil {
 		return err
 	}
 
-	// Only delete the associated kubernetes secret if it is not being used by other deployments
-	if !multipleDeploymentsUsingSecret {
+	// Only delete the associated kubernetes secret if it is not being used by other daemonSets
+	if !multipleDaemonSetsUsingSecret {
 		if err = r.Delete(context.Background(), kubernetesSecret); err != nil {
 			if !errors.IsNotFound(err) {
 				return err
@@ -157,21 +157,21 @@ func (r *DeploymentReconciler) cleanupKubernetesSecretForDeployment(secretName s
 	return nil
 }
 
-func (r *DeploymentReconciler) areMultipleDeploymentsUsingSecret(updatedSecrets map[string]*corev1.Secret, deletedDeployment appsv1.Deployment) (bool, error) {
-	deployments := &appsv1.DeploymentList{}
+func (r *DaemonSetReconciler) areMultipleDaemonSetsUsingSecret(updatedSecrets map[string]*corev1.Secret, deletedDaemonSet appsv1.DaemonSet) (bool, error) {
+	daemonSets := &appsv1.DaemonSetList{}
 	opts := []client.ListOption{
-		client.InNamespace(deletedDeployment.Namespace),
+		client.InNamespace(deletedDaemonSet.Namespace),
 	}
 
-	err := r.List(context.Background(), deployments, opts...)
+	err := r.List(context.Background(), daemonSets, opts...)
 	if err != nil {
-		logDeployment.Error(err, "Failed to list kubernetes deployments")
+		logDaemonSet.Error(err, "Failed to list kubernetes DaemonSets")
 		return false, err
 	}
 
-	for i := 0; i < len(deployments.Items); i++ {
-		if deployments.Items[i].Name != deletedDeployment.Name {
-			if op.IsDeploymentUsingSecrets(&deployments.Items[i], updatedSecrets) {
+	for i := 0; i < len(daemonSets.Items); i++ {
+		if daemonSets.Items[i].Name != deletedDaemonSet.Name {
+			if op.IsDaemonSetUsingSecrets(&daemonSets.Items[i], updatedSecrets) {
 				return true, nil
 			}
 		}
@@ -179,13 +179,13 @@ func (r *DeploymentReconciler) areMultipleDeploymentsUsingSecret(updatedSecrets 
 	return false, nil
 }
 
-func (r *DeploymentReconciler) removeOnePasswordFinalizerFromDeployment(deployment *appsv1.Deployment) error {
-	deployment.ObjectMeta.Finalizers = utils.RemoveString(deployment.ObjectMeta.Finalizers, finalizer)
-	return r.Update(context.Background(), deployment)
+func (r *DaemonSetReconciler) removeOnePasswordFinalizerFromDaemonSet(daemonSet *appsv1.DaemonSet) error {
+	daemonSet.ObjectMeta.Finalizers = utils.RemoveString(daemonSet.ObjectMeta.Finalizers, finalizer)
+	return r.Update(context.Background(), daemonSet)
 }
 
-func (r *DeploymentReconciler) handleApplyingDeployment(deployment *appsv1.Deployment, namespace string, annotations map[string]string, request reconcile.Request) error {
-	reqLog := logDeployment.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+func (r *DaemonSetReconciler) handleApplyingDaemonSet(daemonSet *appsv1.DaemonSet, namespace string, annotations map[string]string, request reconcile.Request) error {
+	reqLog := logDaemonSet.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 
 	secretName := annotations[op.NameAnnotation]
 	secretLabels := map[string]string(nil)
@@ -202,15 +202,15 @@ func (r *DeploymentReconciler) handleApplyingDeployment(deployment *appsv1.Deplo
 	}
 
 	// Create owner reference.
-	gvk, err := apiutil.GVKForObject(deployment, r.Scheme)
+	gvk, err := apiutil.GVKForObject(daemonSet, r.Scheme)
 	if err != nil {
 		return fmt.Errorf("could not to retrieve group version kind: %v", err)
 	}
 	ownerRef := &metav1.OwnerReference{
 		APIVersion: gvk.GroupVersion().String(),
 		Kind:       gvk.Kind,
-		Name:       deployment.GetName(),
-		UID:        deployment.GetUID(),
+		Name:       daemonSet.GetName(),
+		UID:        daemonSet.GetUID(),
 	}
 
 	return kubeSecrets.CreateKubernetesSecretFromItem(r.Client, secretName, namespace, item, annotations[op.AutoRestartWorkloadAnnotation], secretLabels, secretType, ownerRef)
